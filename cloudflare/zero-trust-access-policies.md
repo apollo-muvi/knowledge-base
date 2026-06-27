@@ -123,6 +123,40 @@ Allow → Require Country = United States, Portugal
 
 ---
 
+## 實戰經驗：LINE Bot + Access 的衝突
+
+### 問題
+如果用 Bypass 讓 `/line/*` 公開，而 Allow 保護其他路由，**LINE Bot 的 Webhook 請求會因為 Cloudflare Access 的驗證被擋住**，因為 LINE 伺服器不知道怎麼通過 Access 的登入閘門。
+
+### 解法
+必須對 LINE Webhook 路徑加 **Bypass policy**（Everyone），這樣 LINE 伺服器的請求才能直達後端。Service Auth 也可以用，但 LINE Bot 不支援自訂 header，所以只能用 Bypass。
+
+### 另一個解法：先鎖 API，前端保留 JWT
+與其用 Cloudflare Access 擋整個 domain，不如只在 Cloudflare 層鎖 `/api/*` 路徑 + 用 Service Token，前端維持 App JWT 登入。這樣 LINE Webhook 路徑不受影響。
+
+---
+
+## 實戰經驗：LINE Flex Message 推播
+
+### 踩坑記錄
+- LINE Messaging API 的 `PushMessageRequest` 的 `to` 參數必須是**真實 LINE User ID**，假的測試 ID（如 `line_user_001`）會回 400
+- 推播到多個 LINE ID 時，應逐個發送並用 try/except 跳過失敗的，不要 batch
+- Flex Message 必須用 SDK typed object（`FlexMessage`/`FlexBubble`）不能用 raw dict
+
+### 多對象推播設計
+```
+for each LINE ID:
+    try:
+        PushMessageRequest(to=line_id, messages=[flex_msg])
+        success_count++
+    except:
+        log warning, continue
+return success_count
+```
+如果 success_count > 0，標記為已通知（`notified = True`）。
+
+---
+
 ## API / Terraform
 
 Cloudflare Access 也可透過 API 或 Terraform 管理：
